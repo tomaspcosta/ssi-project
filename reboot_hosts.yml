@@ -1,0 +1,15 @@
+---
+- name: Reboot hosts
+  hosts: all
+  become: yes
+  tasks:
+    - name: Reboot the host
+      ansible.builtin.reboot:
+        reboot_timeout: 150
+        test_command: whoami
+      register: reboot_result
+
+    - name: Display reboot result
+      debug:
+        msg: "Host {{ inventory_hostname }} has been rebooted."
+      when: reboot_result is success

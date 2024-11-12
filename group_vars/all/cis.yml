@@ -1,0 +1,41 @@
+skip_reboot: true
+system_is_container: false
+setup_audit: true
+run_audit: true
+audit_log_dir: '/var/log/audit'
+ubtu20cis_firewall_package: 'ufw'
+ubtu20cis_ufw_allow_in:
+  - port: 22
+    from: any
+    proto: tcp
+  - port: 80
+    from: any
+    proto: tcp
+  - port: 433
+    from: any
+    proto: tcp
+  - port: 80
+    from: any
+    proto: udp
+  - port: 443
+    from: any
+    proto: udp
+  - port: 31466
+    from: any
+    proto: tcp
+ubtu20cis_sshd:
+  log_level: "INFO"
+  max_auth_tries: 4
+  ciphers: "chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr"
+  macs: "hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,hmac-sha2-512,hmac-sha2-256"
+  kex_algorithms: "curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group14-sha256,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512,ecdh-sha2-nistp521,ecdh-sha2-nistp384,ecdh-sha2-nistp256,diffie-hellman-group-exchange-sha256"
+  client_alive_interval: 300
+  client_alive_count_max: 3
+  login_grace_time: 60
+  max_sessions: 4
+  allow_users: "server server1 server2 desktop1 master vagrant ubuntu"
+  allow_groups: "server server1 server2 desktop1 master vagrant ubuntu"
+ubtu20cis_set_root_password: false
+ubtu20cis_time_sync_tool: 'systemd-timesyncd'
+ubtu20cis_syslog_service: 'rsyslog'
+ubtu20cis_rule_3_2_2: false

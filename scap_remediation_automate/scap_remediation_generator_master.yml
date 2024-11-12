@@ -1,0 +1,56 @@
+---
+- name: Generate and Apply SCAP Remediation
+  hosts: all
+  tasks:
+    - name: Ensure OpenSCAP is installed
+      ansible.builtin.apt:
+        name: libopenscap8
+        state: present
+
+    - name: Ensure SCAP Security Guide is installed
+      ansible.builtin.apt:
+        name: ssg-debderived
+        state: present
+
+    - name: Generate SCAP remediation file
+      ansible.builtin.command: >
+        oscap xccdf generate fix
+        --profile xccdf_org.ssgproject.content_profile_cis_level2_server
+        --template urn:xccdf:fix:script:ansible
+        --output /tmp/{{ inventory_hostname }}-remediation.yml
+        /usr/share/xml/scap/ssg/content/scap-security-guide-0.1.69/ssg-ubuntu2004-ds-1.2.xml
+      register: generate_remediation
+      ignore_errors: yes
+
+    - name: Print remediation generation status
+      ansible.builtin.debug:
+        var: generate_remediation.rc
+
+    - name: Slurp the remediation file from the node
+      ansible.builtin.slurp:
+        src: /tmp/{{ ansible_hostname }}-remediation.yml
+      register: slurp_remediation
+
+    - name: Create remediations directory on the master node
+      ansible.builtin.file:
+        path: /home/master/remediations
+        state: directory
+        mode: '0755'
+      delegate_to: master
+      remote_user: master
+      run_once: true
+
+    - name: Ensure correct ownership on the remediations directory
+      ansible.builtin.command:
+        cmd: chown -R master:master /home/master/remediations
+      delegate_to: master
+      remote_user: master
+      run_once: true
+
+    - name: Write remediation file to master node
+      ansible.builtin.copy:
+        content: "{{ slurp_remediation.content | b64decode }}"
+        dest: /home/master/remediations/{{ inventory_hostname }}-remediation.yml
+        mode: '0664'
+      delegate_to: master
+      remote_user: master

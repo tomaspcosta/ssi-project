@@ -1,0 +1,7 @@
+---
+- name: role_cis
+  src: https://github.com/ansible-lockdown/UBUNTU22-CIS.git
+  scm: git
+  version: main
+...
+

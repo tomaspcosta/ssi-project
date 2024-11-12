@@ -1,0 +1,15 @@
+---
+- name: Power off hosts
+  hosts: all
+  become: yes
+  tasks:
+    - name: Shut down the host
+      community.general.shutdown:
+        delay: 0
+        msg: "Powering off hosts"
+      register: shutdown_result
+
+    - name: Display shutdown result
+      debug:
+        msg: "Host {{ inventory_hostname }} is shutting down."
+      when: shutdown_result.shutdown
