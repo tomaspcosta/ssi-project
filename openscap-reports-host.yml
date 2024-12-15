@@ -1,0 +1,107 @@
+---
+- name: Run OpenSCAP
+  hosts: all
+  tasks:
+    - name: Update and upgrade packages
+      ansible.builtin.apt:
+        update_cache: yes
+        upgrade: dist
+
+    - name: Install OpenSCAP
+      ansible.builtin.apt:
+        name: libopenscap8
+        state: present
+
+    - name: Confirm installation of OpenSCAP
+      ansible.builtin.command: which oscap
+      register: oscap_location
+      ignore_errors: yes
+
+    - name: Install SCAP security guide for Debian-based OS
+      ansible.builtin.apt:
+        name: ssg-debderived
+        state: present
+
+    - name: Ensure the target directory for SCAP Security Guide exists
+      ansible.builtin.file:
+        path: /usr/share/xml/scap/ssg/content/
+        state: directory
+        mode: '0755'
+
+    - name: Check if SCAP Security Guide has already been downloaded and unzipped
+      ansible.builtin.stat:
+        path: /usr/share/xml/scap/ssg/content/.scap_security_guide_installed
+      register: scap_guide_installed
+
+    - name: Download the latest SCAP Security Guide
+      ansible.builtin.get_url:
+        url: https://github.com/ComplianceAsCode/content/releases/download/v0.1.69/scap-security-guide-0.1.69.zip
+        dest: /tmp/scap-security-guide-0.1.69.zip
+      when: scap_guide_installed.stat.exists == false
+
+    - name: Install unzip
+      ansible.builtin.apt:
+        name: unzip
+        state: present
+
+    - name: Unzip the SCAP Security Guide
+      ansible.builtin.unarchive:
+        src: /tmp/scap-security-guide-0.1.69.zip
+        dest: /usr/share/xml/scap/ssg/content/
+        remote_src: yes
+      when: scap_guide_installed.stat.exists == false
+
+    - name: Mark SCAP Security Guide as installed
+      ansible.builtin.file:
+        path: /usr/share/xml/scap/ssg/content/.scap_security_guide_installed
+        state: touch
+      when: scap_guide_installed.stat.exists == false
+
+    - name: Display available profiles
+      ansible.builtin.command: oscap info /usr/share/xml/scap/ssg/content/scap-security-guide-0.1.69/ssg-ubuntu2004-ds-1.2.xml
+      register: profile_info
+
+    - name: Print profile information
+      ansible.builtin.debug:
+        var: profile_info.stdout
+
+    - name: Run STIG scan with OpenSCAP
+      ansible.builtin.command: >
+        oscap xccdf eval --profile xccdf_org.ssgproject.content_profile_cis_level1_server
+        --report /tmp/{{ ansible_hostname }}-report.html
+        /usr/share/xml/scap/ssg/content/scap-security-guide-0.1.69/ssg-ubuntu2004-ds-1.2.xml
+      register: scan_result
+      ignore_errors: yes
+
+    - name: Print scan result status
+      ansible.builtin.debug:
+        var: scan_result.rc
+
+    - name: Slurp the report from the node
+      ansible.builtin.slurp:
+        src: /tmp/{{ ansible_hostname }}-report.html
+      register: slurp_report
+
+    - name: Create reports directory on the master node
+      ansible.builtin.file:
+        path: /home/awx/reports
+        state: directory
+        mode: '0755'
+      delegate_to: master
+      remote_user: master
+      run_once: true
+
+    - name: Ensure correct ownership on the reports directory
+      ansible.builtin.command:
+        cmd: chown -R awx:awx /home/awx/reports
+      delegate_to: master
+      remote_user: master
+      run_once: true
+
+    - name: Write report to master node
+      ansible.builtin.copy:
+        content: "{{ slurp_report.content | b64decode }}"
+        dest: /home/awx/reports/{{ inventory_hostname }}-{{ ansible_date_time.iso8601 }}-report.html
+        mode: '0664'
+      delegate_to: master
+      remote_user: master
