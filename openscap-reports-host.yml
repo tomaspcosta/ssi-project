@@ -1,10 +1,7 @@
 ---
 - name: Run OpenSCAP
   hosts: all
-  become: yes
-  become_method: sudo
   tasks:
-
     - name: Update and upgrade packages
       ansible.builtin.apt:
         update_cache: yes
@@ -60,16 +57,6 @@
         state: touch
       when: scap_guide_installed.stat.exists == false
 
-    - name: Verify SCAP XML file exists
-      ansible.builtin.stat:
-        path: /usr/share/xml/scap/ssg/content/scap-security-guide-0.1.69/ssg-ubuntu2004-ds-1.2.xml
-      register: scap_file
-
-    - name: Fail if SCAP XML file is missing
-      ansible.builtin.fail:
-        msg: "The SCAP XML file is missing. Ensure the download and unarchive steps work properly."
-      when: not scap_file.stat.exists
-
     - name: Display available profiles
       ansible.builtin.command: oscap info /usr/share/xml/scap/ssg/content/scap-security-guide-0.1.69/ssg-ubuntu2004-ds-1.2.xml
       register: profile_info
@@ -94,6 +81,17 @@
       ansible.builtin.slurp:
         src: /tmp/{{ ansible_hostname }}-report.html
       register: slurp_report
+      ignore_errors: yes
+
+    - name: Check if the report exists on the node
+      ansible.builtin.stat:
+        path: /tmp/{{ ansible_hostname }}-report.html
+      register: report_stat
+      ignore_errors: yes
+
+    - name: Debug report stat
+      ansible.builtin.debug:
+        var: report_stat
 
     - name: Create reports directory on the master node
       ansible.builtin.file:
@@ -104,12 +102,9 @@
       remote_user: master
       run_once: true
 
-    - name: Set ownership for reports directory
-      ansible.builtin.file:
-        path: /home/awx/reports
-        owner: awx
-        group: awx
-        recurse: yes
+    - name: Ensure correct ownership on the reports directory
+      ansible.builtin.command:
+        cmd: chown -R awx:awx /home/awx/reports
       delegate_to: master
       remote_user: master
       run_once: true
@@ -117,7 +112,7 @@
     - name: Write report to master node
       ansible.builtin.copy:
         content: "{{ slurp_report.content | b64decode }}"
-        dest: /home/awx/reports/{{ inventory_hostname }}-{{ lookup('pipe', 'date +%Y%m%d-%H%M%S') }}-report.html
+        dest: /home/awx/reports/{{ inventory_hostname }}-{{ ansible_date_time.iso8601 }}-report.html
         mode: '0664'
       delegate_to: master
       remote_user: master
