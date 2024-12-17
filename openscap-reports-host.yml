@@ -81,17 +81,6 @@
       ansible.builtin.slurp:
         src: /tmp/{{ ansible_hostname }}-report.html
       register: slurp_report
-      ignore_errors: yes
-
-    - name: Check if the report exists on the node
-      ansible.builtin.stat:
-        path: /tmp/{{ ansible_hostname }}-report.html
-      register: report_stat
-      ignore_errors: yes
-
-    - name: Debug report stat
-      ansible.builtin.debug:
-        var: report_stat
 
     - name: Create reports directory on the master node
       ansible.builtin.file:
