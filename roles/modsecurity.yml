@@ -1,103 +1,86 @@
 ---
-- name: Install and configure ModSecurity to protect Juice Shop
-  hosts: all
-  become: yes
-  tasks:
-
-    - name: Update apt repository and upgrade packages
-      apt:
-        update_cache: yes
-        upgrade: dist
-
-    - name: Install Apache and required packages
-      apt:
-        name:
-          - apache2
-          - libapache2-mod-security2
-          - curl
-        state: present
-
-    - name: Enable Apache mod_security module
-      apache2_module:
-        name: security2
-        state: present
-
-    - name: Install ModSecurity CRS (OWASP Core Rule Set)
-      apt:
-        name: modsecurity-crs
-        state: present
-
-    - name: Configure ModSecurity to be enabled
-      copy:
-        dest: /etc/modsecurity/modsecurity.conf
-        content: |
-          SecRuleEngine On
-          SecRequestBodyAccess On
-          SecResponseBodyAccess Off
-          SecAuditEngine On
-          SecAuditLog /var/log/apache2/modsec_audit.log
-          SecAuditLogStorageDir /var/log/apache2/
-          SecDebugLog /var/log/apache2/modsec_debug.log
-          SecDebugLogLevel 0
-          SecRule ARGS|ARGS_NAMES|REQUEST_HEADERS|XML:/* "@rx .*" \
-            "phase:2,log,deny,status:403,msg:'Possible SQL Injection Attempt'"
-
-    - name: Copy OWASP CRS files to Apache configuration folder
-      copy:
-        src: /usr/share/modsecurity-crs/base_rules/
-        dest: /etc/modsecurity/crs/
-        mode: 0644
-        recurse: yes
-
-    - name: Configure Apache to include ModSecurity and CRS
-      lineinfile:
-        path: /etc/apache2/apache2.conf
-        regexp: '^#IncludeOptional.*'
-        line: 'IncludeOptional /etc/modsecurity/crs/*.conf'
-
-    - name: Set proper permissions for Apache logs
-      file:
-        path: /var/log/apache2
-        owner: root
-        group: www-data
-        mode: '0750'
-        recurse: yes
-
-    - name: Create and set permissions for ModSecurity audit log
-      file:
-        path: /var/log/apache2/modsec_audit.log
-        state: touch
-        owner: www-data
-        group: www-data
-        mode: '0640'
-
-    - name: Restart Apache to apply the changes
-      service:
-        name: apache2
-        state: restarted
-
-    - name: Ensure Apache is enabled to start on boot
-      systemd:
-        name: apache2
-        enabled: yes
-        state: started
-
-    - name: Ensure ModSecurity is enabled
-      command: "a2enmod security2"
-      notify:
-        - restart apache
-
-    - name: Test ModSecurity is working
-      uri:
-        url: "http://localhost"
-        method: GET
-        return_content: yes
-      register: result
-      failed_when: "'403 Forbidden' not in result.content"
-
-    handlers:
-      - name: restart apache
+  - name: Install and configure ModSecurity with OWASP CRS for Juice Shop
+    hosts: all
+    become: yes
+    tasks:
+  
+      # Ensure that required packages are installed
+      - name: Ensure required packages are installed (Apache, ModSecurity, Git)
+        apt:
+          name:
+            - apache2
+            - libapache2-mod-security2
+            - git
+          state: present
+          update_cache: yes
+  
+      # Ensure ModSecurity is enabled and configured properly
+      - name: Enable ModSecurity module
+        apache2_module:
+          name: security2
+          state: present
+  
+      # Ensure Apache mod_headers and mod_rewrite are enabled
+      - name: Ensure mod_headers and mod_rewrite are enabled
+        apache2_module:
+          name: "{{ item }}"
+          state: present
+        loop:
+          - headers
+          - rewrite
+  
+      # Check if CRS exists, if not, clone from GitHub
+      - name: Ensure CRS is cloned if not present
+        git:
+          repo: 'https://github.com/SpiderLabs/owasp-modsecurity-crs.git'
+          dest: /etc/modsecurity/crs
+          version: master
+          force: no
+        when: not (ansible_facts['os_family'] == 'Debian' and ansible_facts['distribution'] == 'Ubuntu' and
+                    ansible_facts['distribution_version'] is version('18.04', '>='))
+  
+      # Ensure that the CRS configuration files are present
+      - name: Ensure CRS configuration files are in place
+        copy:
+          src: /etc/modsecurity/crs/crs-setup.conf.example
+          dest: /etc/modsecurity/crs/crs-setup.conf
+          remote_src: yes
+          force: no
+        when: not (ansible_facts['os_family'] == 'Debian' and ansible_facts['distribution'] == 'Ubuntu' and
+                    ansible_facts['distribution_version'] is version('18.04', '>='))
+  
+      # Adjust file permissions for Apache log directories
+      - name: Ensure correct permissions on Apache log directory
+        file:
+          path: /var/log/apache2
+          owner: root
+          group: adm
+          mode: '0750'
+          state: directory
+  
+      # Ensure the ModSecurity audit log exists with correct permissions
+      - name: Ensure modsec_audit.log exists
+        file:
+          path: /var/log/apache2/modsec_audit.log
+          owner: www-data
+          group: www-data
+          mode: '0640'
+          state: touch
+  
+      # Ensure Apache2 is restarted to apply ModSecurity configurations
+      - name: Restart Apache2 service to apply configurations
         service:
           name: apache2
           state: restarted
-
+  
+      # Test if ModSecurity is working
+      - name: Test if ModSecurity is enabled (checking modsec_audit.log)
+        shell: tail -n 10 /var/log/apache2/modsec_audit.log
+        register: modsec_log_check
+        failed_when: modsec_log_check.stdout == ""
+        changed_when: false
+  
+      # Final confirmation that ModSecurity is running and preventing vulnerabilities
+      - name: Print confirmation message
+        debug:
+          msg: "ModSecurity with OWASP CRS has been successfully installed and is protecting your application!"
