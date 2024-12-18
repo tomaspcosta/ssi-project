@@ -1,0 +1,103 @@
+---
+- name: Install and configure ModSecurity to protect Juice Shop
+  hosts: all
+  become: yes
+  tasks:
+
+    - name: Update apt repository and upgrade packages
+      apt:
+        update_cache: yes
+        upgrade: dist
+
+    - name: Install Apache and required packages
+      apt:
+        name:
+          - apache2
+          - libapache2-mod-security2
+          - curl
+        state: present
+
+    - name: Enable Apache mod_security module
+      apache2_module:
+        name: security2
+        state: present
+
+    - name: Install ModSecurity CRS (OWASP Core Rule Set)
+      apt:
+        name: modsecurity-crs
+        state: present
+
+    - name: Configure ModSecurity to be enabled
+      copy:
+        dest: /etc/modsecurity/modsecurity.conf
+        content: |
+          SecRuleEngine On
+          SecRequestBodyAccess On
+          SecResponseBodyAccess Off
+          SecAuditEngine On
+          SecAuditLog /var/log/apache2/modsec_audit.log
+          SecAuditLogStorageDir /var/log/apache2/
+          SecDebugLog /var/log/apache2/modsec_debug.log
+          SecDebugLogLevel 0
+          SecRule ARGS|ARGS_NAMES|REQUEST_HEADERS|XML:/* "@rx .*" \
+            "phase:2,log,deny,status:403,msg:'Possible SQL Injection Attempt'"
+
+    - name: Copy OWASP CRS files to Apache configuration folder
+      copy:
+        src: /usr/share/modsecurity-crs/base_rules/
+        dest: /etc/modsecurity/crs/
+        mode: 0644
+        recurse: yes
+
+    - name: Configure Apache to include ModSecurity and CRS
+      lineinfile:
+        path: /etc/apache2/apache2.conf
+        regexp: '^#IncludeOptional.*'
+        line: 'IncludeOptional /etc/modsecurity/crs/*.conf'
+
+    - name: Set proper permissions for Apache logs
+      file:
+        path: /var/log/apache2
+        owner: root
+        group: www-data
+        mode: '0750'
+        recurse: yes
+
+    - name: Create and set permissions for ModSecurity audit log
+      file:
+        path: /var/log/apache2/modsec_audit.log
+        state: touch
+        owner: www-data
+        group: www-data
+        mode: '0640'
+
+    - name: Restart Apache to apply the changes
+      service:
+        name: apache2
+        state: restarted
+
+    - name: Ensure Apache is enabled to start on boot
+      systemd:
+        name: apache2
+        enabled: yes
+        state: started
+
+    - name: Ensure ModSecurity is enabled
+      command: "a2enmod security2"
+      notify:
+        - restart apache
+
+    - name: Test ModSecurity is working
+      uri:
+        url: "http://localhost"
+        method: GET
+        return_content: yes
+      register: result
+      failed_when: "'403 Forbidden' not in result.content"
+
+    handlers:
+      - name: restart apache
+        service:
+          name: apache2
+          state: restarted
+
