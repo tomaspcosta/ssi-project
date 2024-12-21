@@ -3,8 +3,7 @@
     hosts: all
     become: yes
     tasks:
-  
-      # Ensure that required packages are installed
+      # Ensure that required packages are installed (Apache, ModSecurity, Git)
       - name: Ensure required packages are installed (Apache, ModSecurity, Git)
         apt:
           name:
@@ -38,8 +37,8 @@
           force: no
         when: not (ansible_facts['os_family'] == 'Debian' and ansible_facts['distribution'] == 'Ubuntu' and
                     ansible_facts['distribution_version'] is version('18.04', '>='))
-  
-      # Ensure that the CRS configuration files are present
+    
+      # Ensure that the CRS configuration files are in place
       - name: Ensure CRS configuration files are in place
         copy:
           src: /etc/modsecurity/crs/crs-setup.conf.example
@@ -48,6 +47,24 @@
           force: no
         when: not (ansible_facts['os_family'] == 'Debian' and ansible_facts['distribution'] == 'Ubuntu' and
                     ansible_facts['distribution_version'] is version('18.04', '>='))
+    
+      # Copy custom ModSecurity configuration file
+      - name: Copy custom modsecurity configuration
+        copy:
+          src: ./modsecurity-config.conf  # Custom configuration file you created
+          dest: /etc/modsecurity/modsecurity.conf
+          owner: root
+          group: root
+          mode: '0644'
+  
+      # Copy custom CRS exceptions file for JuiceShop
+      - name: Copy custom CRS exceptions file for JuiceShop
+        copy:
+          src: ./crs-juice-shop-exceptions.conf  # Custom file to handle exceptions
+          dest: /etc/modsecurity/crs/extra/crs-juice-shop-exceptions.conf
+          owner: root
+          group: root
+          mode: '0644'
   
       # Adjust file permissions for Apache log directories
       - name: Ensure correct permissions on Apache log directory
@@ -83,4 +100,4 @@
       # Final confirmation that ModSecurity is running and preventing vulnerabilities
       - name: Print confirmation message
         debug:
-          msg: "ModSecurity with OWASP CRS has been successfully installed and is protecting your application!"
+          msg: "ModSecurity with OWASP CRS has been successfully installed and is protecting your application!"  
