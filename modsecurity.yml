@@ -48,24 +48,37 @@
         when: not (ansible_facts['os_family'] == 'Debian' and ansible_facts['distribution'] == 'Ubuntu' and
                     ansible_facts['distribution_version'] is version('18.04', '>='))
     
-      # Copy custom ModSecurity configuration file
-      - name: Copy custom modsecurity configuration
+      # Customize ModSecurity configuration directly in the playbook
+      - name: Create custom modsecurity.conf file for JuiceShop
         copy:
-          src: ./modsecurity-config.conf  # Custom configuration file you created
+          content: |
+            SecRuleEngine On
+            SecRequestBodyAccess On
+            SecResponseBodyAccess Off
+            SecAuditEngine On
+            SecAuditLog /var/log/apache2/modsec_audit.log
+            SecAuditLogParts ABIJDEFHZ
+            SecRule REQUEST_HEADERS:User-Agent "Mozilla" "phase:1,log,deny,status:403,msg:'Blocked User-Agent'"
+            SecRule ARGS:coupon "@rx [A-Za-z0-9]{8,}" "id:100001,phase:2,allow,t:none"
+            SecRule ARGS:name "@rx 'Forged Review'" "id:100002,phase:2,allow,t:none"
+            SecRule ARGS:review "@rx 'Five-Star Feedback'" "id:100003,phase:2,allow,t:none"
           dest: /etc/modsecurity/modsecurity.conf
           owner: root
           group: root
           mode: '0644'
-  
-      # Copy custom CRS exceptions file for JuiceShop
-      - name: Copy custom CRS exceptions file for JuiceShop
+      
+      # Create custom CRS exceptions file directly in the playbook for JuiceShop
+      - name: Create custom CRS exceptions for JuiceShop
         copy:
-          src: ./crs-juice-shop-exceptions.conf  # Custom file to handle exceptions
+          content: |
+            SecRule ARGS:coupon "@rx [A-Za-z0-9]{8,}" "id:100001,phase:2,allow,t:none"
+            SecRule ARGS:name "@rx 'Forged Review'" "id:100002,phase:2,allow,t:none"
+            SecRule ARGS:review "@rx 'Five-Star Feedback'" "id:100003,phase:2,allow,t:none"
           dest: /etc/modsecurity/crs/extra/crs-juice-shop-exceptions.conf
           owner: root
           group: root
           mode: '0644'
-  
+      
       # Adjust file permissions for Apache log directories
       - name: Ensure correct permissions on Apache log directory
         file:
