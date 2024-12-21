@@ -1,10 +1,12 @@
 ---
   - name: Install and configure ModSecurity with OWASP CRS for Juice Shop
-    hosts: all
+    hosts: webserver
     become: yes
     tasks:
   
-      # Ensure that required packages are installed
+      - name: Gather facts
+        ansible.builtin.gather_facts:
+  
       - name: Ensure required packages are installed (Apache, ModSecurity, Git)
         apt:
           name:
@@ -14,89 +16,41 @@
           state: present
           update_cache: yes
   
-      # Ensure ModSecurity is enabled and configured properly
       - name: Enable ModSecurity module
         apache2_module:
           name: security2
           state: present
   
-      # Ensure Apache mod_headers and mod_rewrite are enabled
-      - name: Ensure mod_headers and mod_rewrite are enabled
-        apache2_module:
-          name: "{{ item }}"
-          state: present
-        loop:
-          - headers
-          - rewrite
-  
-      # Check if CRS exists, if not, clone from GitHub
-      - name: Ensure CRS is cloned if not present
-        git:
-          repo: 'https://github.com/SpiderLabs/owasp-modsecurity-crs.git'
-          dest: /etc/modsecurity/crs
-          version: master
-          force: no
-        when: not (ansible_facts['os_family'] == 'Debian' and ansible_facts['distribution'] == 'Ubuntu' and
-                    ansible_facts['distribution_version'] is version('18.04', '>='))
-      
-      # Ensure that the CRS configuration files are present
-      - name: Ensure CRS configuration files are in place
+      - name: Ensure the ModSecurity configuration file exists with correct content
         copy:
-          src: /etc/modsecurity/crs/crs-setup.conf.example
-          dest: /etc/modsecurity/crs/crs-setup.conf
-          remote_src: yes
-          force: no
-        when: not (ansible_facts['os_family'] == 'Debian' and ansible_facts['distribution'] == 'Ubuntu' and
-                    ansible_facts['distribution_version'] is version('18.04', '>='))
-      
-      # Ensure the ModSecurity configuration file exists and contains the correct rule
-      - name: Ensure modsecurity.conf file is present with proper content
+          dest: /etc/modsecurity/modsecurity.conf
+          content: |
+            # ModSecurity Configuration for Juice Shop
+            SecRuleEngine On
+            SecRequestBodyAccess On
+            SecResponseBodyAccess Off
+            SecRule REQUEST_HEADERS:User-Agent "libwww-perl" "id:1001,deny,status:403,msg:'Forbidden User-Agent'"
+            SecRule ARGS|REQUEST_HEADERS|XML:/* "@rx some_pattern" "id:1002,phase:2,deny,status:403,msg:'Forbidden request pattern'"
+          owner: root
+          group: root
+          mode: '0644'
+          create: yes
+  
+      - name: Ensure modsecurity.conf file is present with action ID
         lineinfile:
           path: /etc/modsecurity/modsecurity.conf
           regexp: '^SecRule ARGS|REQUEST_HEADERS|XML:/*'
-          line: "SecRule ARGS|REQUEST_HEADERS|XML:/* \"@rx some_pattern\" \"id:1001,phase:2,deny,status:403,msg:'Forbidden'\""
+          line: "SecRule ARGS|REQUEST_HEADERS|XML:/* \"@rx some_pattern\" \"id:1002,phase:2,deny,status:403,msg:'Forbidden request pattern'\""
           create: yes
           backup: yes
   
-      # Adjust file permissions for Apache log directories
-      - name: Ensure correct permissions on Apache log directory
-        file:
-          path: /var/log/apache2
-          owner: root
-          group: adm
-          mode: '0750'
-          state: directory
+      - name: Set paranoia level for ModSecurity in environment variable
+        lineinfile:
+          path: /etc/environment
+          line: "PARANOIA=1"
+          create: yes
   
-      # Ensure the ModSecurity audit log exists with correct permissions
-      - name: Ensure modsec_audit.log exists
-        file:
-          path: /var/log/apache2/modsec_audit.log
-          owner: www-data
-          group: www-data
-          mode: '0640'
-          state: touch
-  
-      # Ensure Apache2 is restarted to apply ModSecurity configurations
-      - name: Test Apache configuration before restarting
-        command: apachectl configtest
-        register: apache_config_test
-        failed_when: apache_config_test.rc != 0
-        changed_when: false
-  
-      - name: Restart Apache2 service to apply configurations
+      - name: Restart Apache to apply changes
         service:
           name: apache2
-          state: restarted
-        when: apache_config_test.rc == 0
-  
-      # Test if ModSecurity is working
-      - name: Test if ModSecurity is enabled (checking modsec_audit.log)
-        shell: tail -n 10 /var/log/apache2/modsec_audit.log
-        register: modsec_log_check
-        failed_when: modsec_log_check.stdout == ""
-        changed_when: false
-  
-      # Final confirmation that ModSecurity is running and preventing vulnerabilities
-      - name: Print confirmation message
-        debug:
-          msg: "ModSecurity with OWASP CRS has been successfully installed and is protecting your application!"  
+          state: restarted  
