@@ -3,8 +3,8 @@
     hosts: all
     become: yes
     tasks:
-    
-      # Ensure that required packages are installed (Apache, ModSecurity, Git)
+  
+      # Ensure that required packages are installed
       - name: Ensure required packages are installed (Apache, ModSecurity, Git)
         apt:
           name:
@@ -38,8 +38,8 @@
           force: no
         when: not (ansible_facts['os_family'] == 'Debian' and ansible_facts['distribution'] == 'Ubuntu' and
                     ansible_facts['distribution_version'] is version('18.04', '>='))
-  
-      # Ensure CRS configuration files are in place (if not already)
+      
+      # Ensure that the CRS configuration files are present
       - name: Ensure CRS configuration files are in place
         copy:
           src: /etc/modsecurity/crs/crs-setup.conf.example
@@ -48,43 +48,17 @@
           force: no
         when: not (ansible_facts['os_family'] == 'Debian' and ansible_facts['distribution'] == 'Ubuntu' and
                     ansible_facts['distribution_version'] is version('18.04', '>='))
+      
+      # Ensure the ModSecurity configuration file exists and contains the correct rule
+      - name: Ensure modsecurity.conf file is present with proper content
+        lineinfile:
+          path: /etc/modsecurity/modsecurity.conf
+          regexp: '^SecRule ARGS|REQUEST_HEADERS|XML:/*'
+          line: 'SecRule ARGS|REQUEST_HEADERS|XML:/* "@rx some_pattern" "id:1001,phase:2,deny,status:403,msg:\'Forbidden\'"'
+          create: yes
+          backup: yes
   
-      # Ensure that modsecurity.conf file is present with content (if not already)
-      - name: Ensure modsecurity.conf file is present with content
-        copy:
-          content: |
-            SecRuleEngine On
-            SecRequestBodyAccess On
-            SecResponseBodyAccess Off
-            SecAuditEngine On
-            SecAuditLog /var/log/apache2/modsec_audit.log
-            SecAuditLogParts ABIJDEFHZ
-            SecRule REQUEST_HEADERS:User-Agent "Mozilla" "phase:1,log,deny,status:403,msg:'Blocked User-Agent'"
-            SecRule ARGS:coupon "@rx [A-Za-z0-9]{8,}" "id:100001,phase:2,allow,t:none"
-            SecRule ARGS:name "@rx 'Forged Review'" "id:100002,phase:2,allow,t:none"
-            SecRule ARGS:review "@rx 'Five-Star Feedback'" "id:100003,phase:2,allow,t:none"
-          dest: /etc/modsecurity/modsecurity.conf
-          owner: root
-          group: root
-          mode: '0644'
-        when: not (ansible_facts['os_family'] == 'Debian' and ansible_facts['distribution'] == 'Ubuntu' and
-                    ansible_facts['distribution_version'] is version('18.04', '>='))
-  
-      # Ensure custom CRS exceptions for JuiceShop
-      - name: Ensure custom CRS exceptions for JuiceShop
-        copy:
-          content: |
-            SecRule ARGS:coupon "@rx [A-Za-z0-9]{8,}" "id:100001,phase:2,allow,t:none"
-            SecRule ARGS:name "@rx 'Forged Review'" "id:100002,phase:2,allow,t:none"
-            SecRule ARGS:review "@rx 'Five-Star Feedback'" "id:100003,phase:2,allow,t:none"
-          dest: /etc/modsecurity/crs/extra/crs-juice-shop-exceptions.conf
-          owner: root
-          group: root
-          mode: '0644'
-        when: not (ansible_facts['os_family'] == 'Debian' and ansible_facts['distribution'] == 'Ubuntu' and
-                    ansible_facts['distribution_version'] is version('18.04', '>='))
-  
-      # Ensure correct permissions on Apache log directory
+      # Adjust file permissions for Apache log directories
       - name: Ensure correct permissions on Apache log directory
         file:
           path: /var/log/apache2
@@ -93,7 +67,7 @@
           mode: '0750'
           state: directory
   
-      # Ensure modsec_audit.log exists with correct permissions
+      # Ensure the ModSecurity audit log exists with correct permissions
       - name: Ensure modsec_audit.log exists
         file:
           path: /var/log/apache2/modsec_audit.log
@@ -103,20 +77,26 @@
           state: touch
   
       # Ensure Apache2 is restarted to apply ModSecurity configurations
+      - name: Test Apache configuration before restarting
+        command: apachectl configtest
+        register: apache_config_test
+        failed_when: apache_config_test.rc != 0
+        changed_when: false
+  
       - name: Restart Apache2 service to apply configurations
         service:
           name: apache2
           state: restarted
+        when: apache_config_test.rc == 0
   
-      # Test if ModSecurity is working (checking modsec_audit.log)
+      # Test if ModSecurity is working
       - name: Test if ModSecurity is enabled (checking modsec_audit.log)
         shell: tail -n 10 /var/log/apache2/modsec_audit.log
         register: modsec_log_check
         failed_when: modsec_log_check.stdout == ""
         changed_when: false
   
-      # Final confirmation that ModSecurity is running and protecting vulnerabilities
+      # Final confirmation that ModSecurity is running and preventing vulnerabilities
       - name: Print confirmation message
         debug:
-          msg: "ModSecurity with OWASP CRS has been successfully installed and is protecting your application!"
-  
+          msg: "ModSecurity with OWASP CRS has been successfully installed and is protecting your application!"  
