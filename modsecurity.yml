@@ -54,7 +54,7 @@
         lineinfile:
           path: /etc/modsecurity/modsecurity.conf
           regexp: '^SecRule ARGS|REQUEST_HEADERS|XML:/*'
-          line: 'SecRule ARGS|REQUEST_HEADERS|XML:/* "@rx some_pattern" "id:1001,phase:2,deny,status:403,msg=\'Forbidden\'"'
+          line: "SecRule ARGS|REQUEST_HEADERS|XML:/* \"@rx some_pattern\" \"id:1001,phase:2,deny,status:403,msg:'Forbidden'\""
           create: yes
           backup: yes
   
@@ -99,5 +99,4 @@
       # Final confirmation that ModSecurity is running and preventing vulnerabilities
       - name: Print confirmation message
         debug:
-          msg: "ModSecurity with OWASP CRS has been successfully installed and is protecting your application!"
-  
+          msg: "ModSecurity with OWASP CRS has been successfully installed and is protecting your application!"  
