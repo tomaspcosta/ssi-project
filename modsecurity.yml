@@ -37,8 +37,8 @@
           force: no
         when: not (ansible_facts['os_family'] == 'Debian' and ansible_facts['distribution'] == 'Ubuntu' and
                     ansible_facts['distribution_version'] is version('18.04', '>='))
-    
-      # Ensure that the CRS configuration files are in place
+  
+      # Ensure CRS configuration files are in place (if not already)
       - name: Ensure CRS configuration files are in place
         copy:
           src: /etc/modsecurity/crs/crs-setup.conf.example
@@ -47,9 +47,9 @@
           force: no
         when: not (ansible_facts['os_family'] == 'Debian' and ansible_facts['distribution'] == 'Ubuntu' and
                     ansible_facts['distribution_version'] is version('18.04', '>='))
-    
-      # Customize ModSecurity configuration directly in the playbook
-      - name: Create custom modsecurity.conf file for JuiceShop
+  
+      # Ensure that modsecurity.conf is created with proper content (if not already)
+      - name: Ensure modsecurity.conf file is present with content
         copy:
           content: |
             SecRuleEngine On
@@ -66,9 +66,12 @@
           owner: root
           group: root
           mode: '0644'
-      
-      # Create custom CRS exceptions file directly in the playbook for JuiceShop
-      - name: Create custom CRS exceptions for JuiceShop
+        create: yes
+        when: not (ansible_facts['os_family'] == 'Debian' and ansible_facts['distribution'] == 'Ubuntu' and
+                    ansible_facts['distribution_version'] is version('18.04', '>='))
+  
+      # Ensure CRS exceptions for JuiceShop exist
+      - name: Ensure custom CRS exceptions for JuiceShop
         copy:
           content: |
             SecRule ARGS:coupon "@rx [A-Za-z0-9]{8,}" "id:100001,phase:2,allow,t:none"
@@ -78,8 +81,11 @@
           owner: root
           group: root
           mode: '0644'
-      
-      # Adjust file permissions for Apache log directories
+        create: yes
+        when: not (ansible_facts['os_family'] == 'Debian' and ansible_facts['distribution'] == 'Ubuntu' and
+                    ansible_facts['distribution_version'] is version('18.04', '>='))
+  
+      # Ensure correct permissions on Apache log directory
       - name: Ensure correct permissions on Apache log directory
         file:
           path: /var/log/apache2
@@ -88,7 +94,7 @@
           mode: '0750'
           state: directory
   
-      # Ensure the ModSecurity audit log exists with correct permissions
+      # Ensure modsec_audit.log exists with correct permissions
       - name: Ensure modsec_audit.log exists
         file:
           path: /var/log/apache2/modsec_audit.log
@@ -103,14 +109,15 @@
           name: apache2
           state: restarted
   
-      # Test if ModSecurity is working
+      # Test if ModSecurity is working (checking modsec_audit.log)
       - name: Test if ModSecurity is enabled (checking modsec_audit.log)
         shell: tail -n 10 /var/log/apache2/modsec_audit.log
         register: modsec_log_check
         failed_when: modsec_log_check.stdout == ""
         changed_when: false
   
-      # Final confirmation that ModSecurity is running and preventing vulnerabilities
+      # Final confirmation that ModSecurity is running and protecting vulnerabilities
       - name: Print confirmation message
         debug:
-          msg: "ModSecurity with OWASP CRS has been successfully installed and is protecting your application!"  
+          msg: "ModSecurity with OWASP CRS has been successfully installed and is protecting your application!"
+  
